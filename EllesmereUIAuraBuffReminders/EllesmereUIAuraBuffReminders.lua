@@ -2317,6 +2317,7 @@ if EABR.FOREVER then
         wellFed = false,    -- Well Fed reminder; opt-in, matched by aura name (every food has its own spell ID)
         whereToShow = {},   -- section "Where to Show" (an absent bucket = shown)
         customIDs = {},     -- spell IDs the user tracks, in the order added
+        customIDClass = {}, -- [spellID] = class token that alone gets the reminder; no entry = every class
     }
 end
 
@@ -4304,7 +4305,8 @@ end
 -- through PlayerHasAuraByID, so combat falls back to the pre-pull snapshot
 -- exactly like the Auras section. Camp Benefits and Well Fed are skipped under
 -- the aura lock and in PvP. The one-slot id table, the cached families and the
--- dismiss-key memo keep the pass allocation-free.
+-- dismiss-key memo keep the pass allocation-free. An ID limited to a class
+-- (customIDClass) is skipped on every other class.
 function EABR.CollectForever(missing, inInstance, inPvP, restricted)
     local fo = db.profile.forever
     if not fo or not EABR.SectionShows(fo.whereToShow, inInstance) then return end
@@ -4335,11 +4337,13 @@ function EABR.CollectForever(missing, inInstance, inPvP, restricted)
     end
     local custom = fo.customIDs
     if not custom then return end
+    local only, cls = fo.customIDClass, GetPlayerClass()
     local keys = EABR._foreverKeys
     if not keys then keys = {}; EABR._foreverKeys = keys end
     for i = 1, #custom do
         local id = custom[i]
-        if not PlayerHasAuraByID(EABR.ForeverFamily(id)) then
+        local c = only and only[id]
+        if (not c or c == cls) and not PlayerHasAuraByID(EABR.ForeverFamily(id)) then
             local dk = keys[id]
             if not dk then dk = "forever:" .. id; keys[id] = dk end
             local e = AcquireEntry()

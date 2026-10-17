@@ -891,26 +891,45 @@ initFrame:SetScript("OnEvent", function(self)
     ---------------------------------------------------------------------------
     ---------------------------------------------------------------------------
     --  WoW Forever custom spells: the lead slot (the Add Custom Spell entry),
-    --  then one slot per tracked spell (label = name + id, button = Remove),
-    --  filled left to right, a blank label in an odd last slot. The page
-    --  rebuilds on add and remove, so the slots never need in-place updates.
+    --  then one slot per tracked spell (label = name + id, control = class
+    --  dropdown, inline Remove), filled left to right, a blank label in an odd
+    --  last slot. The page rebuilds on add and remove; a class pick repaints in place.
     ---------------------------------------------------------------------------
     local function BuildForeverCustomRows(parent, y, lead)
         local f = FDB()
         local ids = f and f.customIDs
         local n = 1 + (ids and #ids or 0)
         local W = EllesmereUI.Widgets
+        local classOrder, classValues = { "ALL" }, { _noLoc = true, ALL = EllesmereUI.L("All Classes") }
+        for _, token in ipairs(EllesmereUI.ForeverClasses()) do
+            local c = EllesmereUI.GetClassColor(token)
+            classOrder[#classOrder + 1] = token
+            classValues[token] = EllesmereUI.HexColor(c.r, c.g, c.b) .. EllesmereUI.ForeverClassName(token) .. "|r"
+        end
         local function Slot(id)
-            return { type="labeledButton", buttonText="Remove", width=90,
+            return { type="dropdown", values=classValues, order=classOrder, dropdownWidth=130,
                 text=_G._EABR_SpellName(id, tostring(id)) .. " |cff808080" .. id .. "|r",
-                tooltip="Reminds you whenever this buff is missing. Remove stops tracking it.",
-                onClick=function()
+                tooltip="Reminds you whenever this buff is missing. Pick the class that gets the reminder, or All Classes. Remove stops tracking it.",
+                getValue=function()
+                    local fo = FDB()
+                    local m = fo and fo.customIDClass
+                    return m and m[id] or "ALL"
+                end,
+                setValue=function(v)
+                    local fo = FDB()
+                    if not fo then return end
+                    fo.customIDClass = fo.customIDClass or {}
+                    fo.customIDClass[id] = (v ~= "ALL") and v or nil
+                    RefreshAll()
+                end,
+                _remove=function()
                     local fo = FDB()
                     local list = fo and fo.customIDs
                     if not list then return end
                     for j = #list, 1, -1 do
                         if list[j] == id then table.remove(list, j) end
                     end
+                    if fo.customIDClass then fo.customIDClass[id] = nil end
                     RefreshAll()
                     EllesmereUI:RefreshPage(true)
                 end }
@@ -921,7 +940,10 @@ initFrame:SetScript("OnEvent", function(self)
             return id and Slot(id) or EllesmereUI.BlankRowCfg()
         end
         for k = 1, n, 2 do
-            local _, h = W:DualRow(parent, y, SlotAt(k), SlotAt(k + 1))
+            local a, b = SlotAt(k), SlotAt(k + 1)
+            local row, h = W:DualRow(parent, y, a, b)
+            if a._remove then EllesmereUI.BuildInlineButton(row._leftRegion, EllesmereUI.L("Remove"), a._remove, { width = 80 }) end
+            if b._remove then EllesmereUI.BuildInlineButton(row._rightRegion, EllesmereUI.L("Remove"), b._remove, { width = 80 }) end
             y = y - h
         end
         return y
@@ -1536,7 +1558,7 @@ initFrame:SetScript("OnEvent", function(self)
         -----------------------------------------------------------------------
         --  WOW FOREVER section: on that client the rest of the page.
         --  Camp Benefits | Well Fed, then the spell-ID entry that adds a custom
-        --  reminder followed by one slot per tracked spell; the retail sections
+        --  reminder followed by one slot per tracked spell (class dropdown, Remove); the retail sections
         --  below never build.
         -----------------------------------------------------------------------
         if FOREVER then
@@ -1572,7 +1594,7 @@ initFrame:SetScript("OnEvent", function(self)
             -- Add Custom Spell, paired with the tracked spells
             y = BuildForeverCustomRows(parent, y,
                 { type="input", text="Add Custom Spell", inputStyle="popup", placeholder="Spell ID", inputWidth=110,
-                  tooltip="Type a spell ID and press Enter to be reminded whenever that buff is missing.\nUnknown IDs are ignored.",
+                  tooltip="Type a spell ID and press Enter to be reminded whenever that buff is missing.\nA new spell reminds only the class you add it on: pick All Classes in its dropdown to share it.\nUnknown IDs are ignored.",
                   getValue=function() return "" end,
                   setValue=function(text)
                       local id = tonumber((text or ""):match("^%s*(%d+)%s*$"))
@@ -1583,6 +1605,8 @@ initFrame:SetScript("OnEvent", function(self)
                       for i = 1, #f.customIDs do
                           if f.customIDs[i] == id then return end
                       end
+                      f.customIDClass = f.customIDClass or {}
+                      f.customIDClass[id] = select(2, UnitClass("player"))
                       f.customIDs[#f.customIDs + 1] = id
                       RefreshAll()
                       -- Rebuilds the page once the edit box has finished its commit.
